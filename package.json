@@ -1,0 +1,44 @@
+{
+  "name": "rapidread",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "ingest": "tsx scripts/ingest.ts",
+    "enrich": "tsx scripts/enrich.ts",
+    "seed-demo-data": "tsx scripts/seed-demo-data.ts",
+    "cdk": "cdk --app 'tsx infra/bin/news-recommender.ts'"
+  },
+  "dependencies": {
+    "@aws-sdk/client-bedrock-runtime": "^3.693.0",
+    "@aws-sdk/client-s3": "^3.693.0",
+    "@aws-sdk/client-dynamodb": "^3.693.0",
+    "@aws-sdk/lib-dynamodb": "^3.693.0",
+    "aws-cdk-lib": "^2.169.0",
+    "constructs": "^10.4.2",
+    "lucide-react": "^0.468.0",
+    "next": "16.2.4",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "rss-parser": "^3.13.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "aws-cdk": "^2.169.0",
+    "@eslint/eslintrc": "^3.3.1",
+    "eslint": "^9.39.1",
+    "eslint-config-next": "16.2.4",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3",
+    "vitest": "^4.1.5"
+  },
+  "overrides": {
+    "postcss": "^8.5.14"
+  }
+}
