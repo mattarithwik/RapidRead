@@ -1,6 +1,6 @@
 import { PreferenceForm } from "@/components/PreferenceForm";
 import { defaultProfile } from "@/lib/seed";
-import { getProfile } from "@/lib/storage/localStore";
+import { getProfile } from "@/lib/storage/store";
 import { getDemoUserId } from "@/lib/user";
 
 export default async function SettingsPage() {

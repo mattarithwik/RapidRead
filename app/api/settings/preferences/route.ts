@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { COUNTRIES, TOPICS } from "@/lib/constants";
 import type { CountryCode, Topic } from "@/lib/types";
-import { getProfile, upsertProfile } from "@/lib/storage/localStore";
+import { getProfile, upsertProfile } from "@/lib/storage/store";
 import { getDemoUserId } from "@/lib/user";
 
 export const runtime = "nodejs";

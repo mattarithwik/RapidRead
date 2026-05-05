@@ -1,7 +1,7 @@
 import { PreferenceForm } from "@/components/PreferenceForm";
 import { ArticleCard } from "@/components/ArticleCard";
 import { defaultProfile } from "@/lib/seed";
-import { getProfile, listArticles, listInteractions, upsertRecommendationScores } from "@/lib/storage/localStore";
+import { getProfile, listArticles, listInteractions, upsertRecommendationScores } from "@/lib/storage/store";
 import { rankArticles, toRecommendationScore } from "@/lib/recommendation/ranking";
 import { getDemoUserId } from "@/lib/user";
 import { countryLabel } from "@/lib/constants";

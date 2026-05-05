@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { addInteraction, getArticle } from "@/lib/storage/localStore";
+import { addInteraction, getArticle } from "@/lib/storage/store";
 import { getDemoUserId } from "@/lib/user";
 
 export const runtime = "nodejs";

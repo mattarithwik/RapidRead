@@ -1,11 +1,13 @@
 import Parser from "rss-parser";
+import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import type { Article } from "@/lib/types";
-import { upsertArticles } from "@/lib/storage/localStore";
+import { upsertArticles } from "@/lib/storage/store";
 import { articleIdFromUrl, canonicalizeUrl } from "@/lib/news/url";
 import { RSS_FEEDS, type NewsFeedSource } from "@/lib/news/feeds";
 import { classifyTopics } from "@/lib/news/topicClassifier";
 
 const parser = new Parser();
+const s3 = new S3Client({});
 
 function excerptFrom(item: Parser.Item): string {
   const text = item.contentSnippet || item.content || item.summary || "";
@@ -15,7 +17,7 @@ function excerptFrom(item: Parser.Item): string {
 export async function ingestFeed(source: NewsFeedSource, maxArticles = 40): Promise<Article[]> {
   const feed = await parser.parseURL(source.url);
   const now = new Date().toISOString();
-  return feed.items
+  const articles = feed.items
     .filter((item) => item.link && item.title)
     .slice(0, maxArticles)
     .map((item) => {
@@ -40,6 +42,34 @@ export async function ingestFeed(source: NewsFeedSource, maxArticles = 40): Prom
         enrichmentAttempts: 0
       } satisfies Article;
     });
+
+  await Promise.all(
+    articles.map((article) =>
+      saveRawSnapshot(article, {
+        source,
+        feedTitle: feed.title,
+        fetchedAt: now
+      })
+    )
+  );
+
+  return articles;
+}
+
+async function saveRawSnapshot(
+  article: Article,
+  metadata: { source: NewsFeedSource; feedTitle?: string; fetchedAt: string }
+): Promise<void> {
+  const bucket = process.env.RAW_ARTICLES_BUCKET;
+  if (!bucket || process.env.STORAGE_BACKEND !== "aws") return;
+  await s3.send(
+    new PutObjectCommand({
+      Bucket: bucket,
+      Key: article.rawS3Key,
+      ContentType: "application/json",
+      Body: JSON.stringify({ article, metadata }, null, 2)
+    })
+  );
 }
 
 export async function ingestAllFeeds(maxArticles = Number(process.env.INGEST_MAX_ARTICLES ?? 200)) {

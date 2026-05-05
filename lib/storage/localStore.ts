@@ -8,6 +8,7 @@ import type {
   UserProfile
 } from "@/lib/types";
 import { seedSnapshot } from "@/lib/seed";
+import type { NewsStore } from "@/lib/storage/types";
 
 const dataDir = path.join(process.cwd(), ".data");
 const storePath = path.join(dataDir, "news-store.json");
@@ -109,3 +110,18 @@ export async function upsertRecommendationScores(scores: RecommendationScore[]):
   snapshot.recommendationScores = [...freshScores, ...scores];
   await writeStore(snapshot);
 }
+
+export const localStore: NewsStore = {
+  readStore,
+  writeStore,
+  resetStore,
+  listArticles,
+  getArticle,
+  upsertArticles,
+  updateArticle,
+  getProfile,
+  upsertProfile,
+  listInteractions,
+  addInteraction,
+  upsertRecommendationScores
+};

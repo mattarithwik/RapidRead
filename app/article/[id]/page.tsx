@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { countryLabel } from "@/lib/constants";
-import { getArticle } from "@/lib/storage/localStore";
+import { getArticle } from "@/lib/storage/store";
 
 export default async function ArticleDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;

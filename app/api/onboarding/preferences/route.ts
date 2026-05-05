@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { COUNTRIES, DEFAULT_USER_ID, TOPICS } from "@/lib/constants";
 import type { CountryCode, Topic, UserProfile } from "@/lib/types";
 import { createUserId, DEMO_USER_COOKIE } from "@/lib/user";
-import { getProfile, upsertProfile } from "@/lib/storage/localStore";
+import { getProfile, upsertProfile } from "@/lib/storage/store";
 
 export const runtime = "nodejs";
 

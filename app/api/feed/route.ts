@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { defaultProfile } from "@/lib/seed";
-import { listArticles, listInteractions, getProfile, upsertRecommendationScores } from "@/lib/storage/localStore";
+import { listArticles, listInteractions, getProfile, upsertRecommendationScores } from "@/lib/storage/store";
 import { rankArticles, toRecommendationScore } from "@/lib/recommendation/ranking";
 import { getDemoUserId } from "@/lib/user";
 

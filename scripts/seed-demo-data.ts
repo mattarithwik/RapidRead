@@ -1,4 +1,4 @@
-import { resetStore } from "@/lib/storage/localStore";
+import { resetStore } from "@/lib/storage/store";
 import { seedSnapshot } from "@/lib/seed";
 
 async function main() {

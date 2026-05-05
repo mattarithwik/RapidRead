@@ -1,7 +1,7 @@
 import { countryLabel } from "@/lib/constants";
 import { defaultProfile } from "@/lib/seed";
 import { summarizeInferredInterests } from "@/lib/recommendation/ranking";
-import { getProfile, listArticles, listInteractions } from "@/lib/storage/localStore";
+import { getProfile, listArticles, listInteractions } from "@/lib/storage/store";
 import { getDemoUserId } from "@/lib/user";
 
 export default async function ProfilePage() {

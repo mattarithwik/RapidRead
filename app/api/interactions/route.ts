@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { addInteraction, getArticle, getProfile, upsertProfile } from "@/lib/storage/localStore";
+import { addInteraction, getArticle, getProfile, upsertProfile } from "@/lib/storage/store";
 import { getDemoUserId } from "@/lib/user";
 import type { InteractionAction } from "@/lib/types";
 

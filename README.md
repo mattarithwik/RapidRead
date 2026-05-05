@@ -23,7 +23,7 @@ flowchart LR
 - Feedback controls: more like this, less like this, save, hide source, mute topic.
 - RSS ingestion script and dev admin route.
 - Bedrock enrichment module with local fallback for demos.
-- AWS CDK stack for S3, DynamoDB, Lambda, EventBridge, IAM, and Cognito.
+- AWS CDK stack for S3, DynamoDB, bundled Lambda workers, EventBridge, IAM, and Cognito.
 
 ## Local Setup
 
@@ -38,10 +38,21 @@ Open `http://localhost:3000`.
 ## Scripts
 
 - `npm run seed-demo-data`: resets local `.data/news-store.json` with realistic multi-country demo data.
-- `npm run ingest`: fetches configured RSS feeds and stores normalized article records locally.
+- `npm run ingest`: fetches configured RSS feeds and stores normalized article records in the active store.
 - `npm run enrich`: enriches pending articles. Set `ENABLE_BEDROCK=true` to call Bedrock; otherwise it uses deterministic local fallback.
 - `npm test`: runs ranking and ingestion unit tests.
 - `npm run cdk synth`: synthesizes the AWS infrastructure template.
+
+## Storage Backends
+
+The app defaults to local JSON storage for a fast demo. Set `STORAGE_BACKEND=aws` plus the CDK outputs below to run the same app/API/scripts against DynamoDB and S3:
+
+```bash
+STORAGE_BACKEND=aws
+NEWS_TABLE_NAME=<NewsTableName output>
+RAW_ARTICLES_BUCKET=<RawArticlesBucketName output>
+AWS_REGION=us-east-1
+```
 
 ## Ranking
 
@@ -80,16 +91,30 @@ Hard filters remove hidden sources, muted topics, disliked articles, and failed 
 
 ## AWS Deployment Notes
 
-The CDK stack creates the portfolio-ready resource baseline, but the included ingestion Lambda is intentionally a placeholder. For a production deploy, bundle `lib/news/ingest.ts` and `lib/news/enrich.ts` into Lambda handlers, then enable the EventBridge rule.
+The CDK stack creates deployable AWS resources and bundles two working Lambda handlers:
+
+- `IngestionFunction`: fetches RSS feeds, deduplicates by canonical URL, writes raw snapshots to S3, and stores article metadata in DynamoDB.
+- `EnrichmentFunction`: scans pending articles, calls Bedrock for summary/topics/entities/sentiment and Titan embeddings, then updates DynamoDB.
+
+EventBridge schedules are created disabled by default to avoid surprise Bedrock cost. Enable them during synth/deploy with `-c enableSchedules=true`.
 
 ```bash
 npm run cdk synth
 npm run cdk deploy
+npm run cdk deploy -- -c enableSchedules=true
 ```
+
+After deploy, copy these outputs into your app environment when hosting the Next.js app on AWS or another platform:
+
+- `NewsTableName`
+- `RawArticlesBucketName`
+- `UserPoolId`
+- `UserPoolClientId`
+- `IngestionFunctionName`
+- `EnrichmentFunctionName`
 
 ## Next Steps
 
-- Replace local JSON persistence with a DynamoDB repository implementation.
 - Add OpenSearch Serverless k-NN after article volume grows beyond in-process ranking.
 - Add Amazon Personalize or A/B tests once enough interaction data exists.
 - Enable Cognito in the app shell for real multi-user deployment.

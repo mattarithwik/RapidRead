@@ -1,6 +1,6 @@
 import { BedrockRuntimeClient, InvokeModelCommand } from "@aws-sdk/client-bedrock-runtime";
 import type { Article, Sentiment, Topic } from "@/lib/types";
-import { listArticles, updateArticle } from "@/lib/storage/localStore";
+import { listArticles, updateArticle } from "@/lib/storage/store";
 import { classifyTopics } from "@/lib/news/topicClassifier";
 
 interface TextEnrichment {
