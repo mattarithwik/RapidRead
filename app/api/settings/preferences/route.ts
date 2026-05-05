@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { COUNTRIES, TOPICS } from "@/lib/constants";
 import type { CountryCode, Topic } from "@/lib/types";
+import { profileFallback } from "@/lib/seed";
 import { getProfile, upsertProfile } from "@/lib/storage/store";
 import { getDemoUserId } from "@/lib/user";
 
@@ -22,18 +23,17 @@ function pickCountries(input: unknown, fallback: CountryCode[]): CountryCode[] {
 export async function PATCH(request: Request) {
   const userId = await getDemoUserId();
   const existing = await getProfile(userId);
-  if (!existing) {
-    return NextResponse.json({ error: "Profile not found" }, { status: 404 });
-  }
   const body = await request.json();
+  const base = existing ?? profileFallback(userId);
   const profile = {
-    ...existing,
-    selectedTopics: pickTopics(body.selectedTopics, existing.selectedTopics),
-    selectedCountries: pickCountries(body.selectedCountries, existing.selectedCountries),
-    mutedTopics: pickTopics(body.mutedTopics, existing.mutedTopics),
+    ...base,
+    selectedTopics: pickTopics(body.selectedTopics, base.selectedTopics),
+    selectedCountries: pickCountries(body.selectedCountries, base.selectedCountries),
+    mutedTopics: pickTopics(body.mutedTopics, base.mutedTopics),
     hiddenSources: Array.isArray(body.hiddenSources)
       ? body.hiddenSources.filter((item: unknown): item is string => typeof item === "string")
-      : existing.hiddenSources,
+      : base.hiddenSources,
+    onboardedAt: base.onboardedAt ?? new Date().toISOString(),
     lastActiveAt: new Date().toISOString()
   };
   await upsertProfile(profile);

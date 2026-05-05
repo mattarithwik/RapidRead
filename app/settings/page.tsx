@@ -1,11 +1,11 @@
 import { PreferenceForm } from "@/components/PreferenceForm";
-import { defaultProfile } from "@/lib/seed";
+import { profileFallback } from "@/lib/seed";
 import { getProfile } from "@/lib/storage/store";
 import { getDemoUserId } from "@/lib/user";
 
 export default async function SettingsPage() {
   const userId = await getDemoUserId();
-  const profile = (await getProfile(userId)) ?? { ...defaultProfile, userId };
+  const profile = (await getProfile(userId)) ?? profileFallback(userId);
 
   return (
     <div className="page">

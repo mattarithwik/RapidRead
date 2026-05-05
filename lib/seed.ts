@@ -221,6 +221,19 @@ export const defaultProfile: UserProfile = {
   lastActiveAt: now.toISOString()
 };
 
+/** Used when no profile exists in storage. Omits `onboardedAt` so the onboarding flow still runs. */
+export function profileFallback(userId: string): UserProfile {
+  return {
+    userId,
+    selectedTopics: defaultProfile.selectedTopics,
+    selectedCountries: defaultProfile.selectedCountries,
+    followedEntities: [],
+    mutedTopics: [],
+    hiddenSources: [],
+    lastActiveAt: new Date().toISOString()
+  };
+}
+
 export const seedSnapshot: NewsStoreSnapshot = {
   articles: seedArticles,
   profiles: [defaultProfile],

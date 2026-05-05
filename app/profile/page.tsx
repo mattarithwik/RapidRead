@@ -1,12 +1,12 @@
 import { countryLabel } from "@/lib/constants";
-import { defaultProfile } from "@/lib/seed";
+import { profileFallback } from "@/lib/seed";
 import { summarizeInferredInterests } from "@/lib/recommendation/ranking";
 import { getProfile, listArticles, listInteractions } from "@/lib/storage/store";
 import { getDemoUserId } from "@/lib/user";
 
 export default async function ProfilePage() {
   const userId = await getDemoUserId();
-  const profile = (await getProfile(userId)) ?? { ...defaultProfile, userId };
+  const profile = (await getProfile(userId)) ?? profileFallback(userId);
   const [articles, interactions] = await Promise.all([listArticles(), listInteractions(userId)]);
   const inferredInterests = summarizeInferredInterests(interactions, articles);
 

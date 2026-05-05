@@ -91,27 +91,42 @@ Hard filters remove hidden sources, muted topics, disliked articles, and failed 
 
 ## AWS Deployment Notes
 
-The CDK stack creates deployable AWS resources and bundles two working Lambda handlers:
+The CDK app defines **two stacks**:
+
+1. **`NewsRecommenderStack`** — DynamoDB, S3 raw bucket, Cognito, ingest + enrich Lambdas, optional EventBridge schedules.
+2. **`RapidReadWebStack`** — Next.js on **AWS Lambda** (OpenNext) with a **CloudFront** distribution in front of static assets and server function URLs.
+
+RapidRead data Lambdas:
 
 - `IngestionFunction`: fetches RSS feeds, deduplicates by canonical URL, writes raw snapshots to S3, and stores article metadata in DynamoDB.
 - `EnrichmentFunction`: scans pending articles, calls Bedrock for summary/topics/entities/sentiment and Titan embeddings, then updates DynamoDB.
 
 EventBridge schedules are created disabled by default to avoid surprise Bedrock cost. Enable them during synth/deploy with `-c enableSchedules=true`.
 
+### Deploy backend + website (Lambda + CloudFront)
+
+From the repo root (after `npm install` and [CDK bootstrap](https://docs.aws.amazon.com/cdk/v2/guide/bootstrapping.html) in your account/region):
+
 ```bash
-npm run cdk synth
-npm run cdk deploy
-npm run cdk deploy -- -c enableSchedules=true
+npm run cdk:deploy
 ```
 
-After deploy, copy these outputs into your app environment when hosting the Next.js app on AWS or another platform:
+That runs `next build`, `open-next build` (writes `.open-next/`), then `cdk deploy --all` for both stacks. The web stack grants the Next.js server Lambda read/write to the news table and raw bucket; `SiteUrl` in **RapidReadWebStack** outputs the CloudFront URL.
 
-- `NewsTableName`
-- `RawArticlesBucketName`
-- `UserPoolId`
-- `UserPoolClientId`
-- `IngestionFunctionName`
-- `EnrichmentFunctionName`
+Other commands:
+
+```bash
+npm run build:open-next   # production Next.js + OpenNext bundle only
+npm run cdk synth
+npm run cdk deploy -- --all
+npm run cdk deploy -- --all -c enableSchedules=true
+```
+
+### Outputs
+
+**NewsRecommenderStack:** `NewsTableName`, `RawArticlesBucketName`, `UserPoolId`, `UserPoolClientId`, `IngestionFunctionName`, `EnrichmentFunctionName`.
+
+**RapidReadWebStack:** `SiteUrl`, `DistributionId`.
 
 ## Next Steps
 

@@ -1,6 +1,6 @@
 import { PreferenceForm } from "@/components/PreferenceForm";
 import { ArticleCard } from "@/components/ArticleCard";
-import { defaultProfile } from "@/lib/seed";
+import { profileFallback } from "@/lib/seed";
 import { getProfile, listArticles, listInteractions, upsertRecommendationScores } from "@/lib/storage/store";
 import { rankArticles, toRecommendationScore } from "@/lib/recommendation/ranking";
 import { getDemoUserId } from "@/lib/user";
@@ -8,7 +8,7 @@ import { countryLabel } from "@/lib/constants";
 
 export default async function HomePage() {
   const userId = await getDemoUserId();
-  const profile = (await getProfile(userId)) ?? { ...defaultProfile, userId };
+  const profile = (await getProfile(userId)) ?? profileFallback(userId);
   const [articles, allInteractions, userInteractions] = await Promise.all([
     listArticles(),
     listInteractions(),
