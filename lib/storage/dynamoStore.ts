@@ -20,7 +20,7 @@ import type {
   RecommendationScore,
   UserProfile
 } from "@/lib/types";
-import type { NewsStore } from "@/lib/storage/types";
+import type { ArticleQueryOptions, ArticleQueryResult, NewsStore } from "@/lib/storage/types";
 
 const tableName = process.env.NEWS_TABLE_NAME;
 
@@ -41,8 +41,17 @@ function articleItem(article: Article) {
   return {
     PK: `ARTICLE#${article.articleId}`,
     SK: "META",
+    GSI1PK: "ARTICLE",
+    GSI1SK: article.publishedAt,
+    GSI2PK: "ARTICLE",
+    GSI2SK: article.publishedAt,
     entityType: "ARTICLE",
-    ...article
+    ...article,
+    ...article.topics.reduce<Record<string, string>>((acc, topic) => {
+      acc[`topicIndex#${topic}`] = article.publishedAt;
+      return acc;
+    }, {}),
+    [`countryIndex#${article.sourceCountry}`]: article.publishedAt
   };
 }
 
@@ -76,12 +85,19 @@ function scoreItem(score: RecommendationScore) {
 }
 
 function stripKeys<T>(item: Record<string, unknown>): T {
-  const { PK, SK, GSI1PK, GSI1SK, entityType, ...rest } = item;
+  const { PK, SK, GSI1PK, GSI1SK, GSI2PK, GSI2SK, entityType, ...rest } = item;
   void PK;
   void SK;
   void GSI1PK;
   void GSI1SK;
+  void GSI2PK;
+  void GSI2SK;
   void entityType;
+  for (const key of Object.keys(rest)) {
+    if (key.startsWith("topicIndex#") || key.startsWith("countryIndex#")) {
+      delete rest[key];
+    }
+  }
   return rest as T;
 }
 
@@ -161,14 +177,57 @@ async function deleteRecommendationScoresForUser(userId: string): Promise<void> 
   await batchDelete(items.map((item) => ({ PK: item.PK as string, SK: item.SK as string })));
 }
 
+function decodeCursor(cursor?: string): Record<string, NativeAttributeValue> | undefined {
+  if (!cursor) return undefined;
+  try {
+    return JSON.parse(Buffer.from(cursor, "base64url").toString("utf8"));
+  } catch {
+    return undefined;
+  }
+}
+
+function encodeCursor(key?: Record<string, NativeAttributeValue>): string | undefined {
+  if (!key) return undefined;
+  return Buffer.from(JSON.stringify(key)).toString("base64url");
+}
+
+export async function queryRecentArticles(options: ArticleQueryOptions = {}): Promise<ArticleQueryResult> {
+  const limit = options.limit ?? 200;
+  const since = options.since ?? new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
+  const response = await client.send(
+    new QueryCommand({
+      TableName: requireTableName(),
+      IndexName: "GSI2",
+      KeyConditionExpression: "GSI2PK = :pk AND GSI2SK >= :since",
+      ExpressionAttributeValues: {
+        ":pk": "ARTICLE",
+        ":since": since
+      },
+      ScanIndexForward: false,
+      Limit: limit,
+      ExclusiveStartKey: decodeCursor(options.cursor)
+    })
+  );
+
+  let articles = (response.Items ?? []).map((item) => stripKeys<Article>(item));
+  if (options.countries?.length) {
+    articles = articles.filter((article) => options.countries?.includes(article.sourceCountry));
+  }
+  if (options.topics?.length) {
+    articles = articles.filter((article) =>
+      article.topics.some((topic) => options.topics?.includes(topic))
+    );
+  }
+
+  return {
+    articles,
+    nextCursor: encodeCursor(response.LastEvaluatedKey as Record<string, NativeAttributeValue> | undefined)
+  };
+}
+
 export async function listArticles(): Promise<Article[]> {
-  const items = await scanAll({
-    FilterExpression: "entityType = :entityType",
-    ExpressionAttributeValues: { ":entityType": "ARTICLE" }
-  });
-  return items
-    .map((item) => stripKeys<Article>(item))
-    .sort((a, b) => Date.parse(b.publishedAt) - Date.parse(a.publishedAt));
+  const result = await queryRecentArticles({ limit: Number(process.env.INGEST_MAX_ARTICLES ?? 200) });
+  return result.articles;
 }
 
 export async function getArticle(articleId: string): Promise<Article | undefined> {
@@ -251,6 +310,31 @@ export async function upsertRecommendationScores(scores: RecommendationScore[]):
   await batchPut(scores.map(scoreItem));
 }
 
+export async function deleteUserData(userId: string): Promise<void> {
+  const items = await queryAll({
+    KeyConditionExpression: "PK = :pk",
+    ExpressionAttributeValues: { ":pk": `USER#${userId}` }
+  });
+  await batchDelete(items.map((item) => ({ PK: item.PK as string, SK: item.SK as string })));
+}
+
+export async function exportUserData(userId: string): Promise<Record<string, unknown>> {
+  const [profile, interactions, scores] = await Promise.all([
+    getProfile(userId),
+    listInteractions(userId),
+    queryAll({
+      KeyConditionExpression: "PK = :pk AND begins_with(SK, :sk)",
+      ExpressionAttributeValues: { ":pk": `USER#${userId}`, ":sk": "SCORE#" }
+    })
+  ]);
+  return {
+    profile,
+    interactions,
+    recommendationScores: scores.map((item) => stripKeys<RecommendationScore>(item)),
+    exportedAt: new Date().toISOString()
+  };
+}
+
 export async function readStore(): Promise<NewsStoreSnapshot> {
   const [articles, interactions, profiles, scores] = await Promise.all([
     listArticles(),
@@ -292,6 +376,7 @@ export const dynamoStore: NewsStore = {
   writeStore,
   resetStore,
   listArticles,
+  queryRecentArticles,
   getArticle,
   upsertArticles,
   updateArticle,
@@ -299,5 +384,7 @@ export const dynamoStore: NewsStore = {
   upsertProfile,
   listInteractions,
   addInteraction,
-  upsertRecommendationScores
+  upsertRecommendationScores,
+  deleteUserData,
+  exportUserData
 };

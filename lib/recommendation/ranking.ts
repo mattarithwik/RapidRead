@@ -1,28 +1,63 @@
+import type { ArticleQueryOptions } from "@/lib/storage/types";
 import { countryLabel } from "@/lib/constants";
 import type {
   Article,
   Interaction,
+  InteractionAction,
   RankedArticle,
   SignalBreakdown,
   Topic,
   UserProfile
 } from "@/lib/types";
-import { averageVectors, clamp01, cosineSimilarity } from "@/lib/recommendation/math";
+import { averageVectors, clamp01, cosineSimilarity, weightedAverageVectors } from "@/lib/recommendation/math";
 
 const SIX_HOURS_SECONDS = 6 * 60 * 60;
+const RECENT_CLICK_WINDOW_MS = 2 * 60 * 60 * 1000;
+const RECENT_CLICK_LIMIT = 10;
+
+const INTERACTION_WEIGHTS: Partial<Record<InteractionAction, number>> = {
+  like: 1,
+  save: 1,
+  click: 0.3
+};
 
 export function computeUserCentroid(
   interactions: Interaction[],
   articles: Article[]
 ): number[] | undefined {
-  const positiveArticleIds = new Set(
-    interactions
-      .filter((interaction) => interaction.action === "like" || interaction.action === "save")
-      .map((interaction) => interaction.articleId)
-  );
-  const vectors = articles
-    .filter((article) => positiveArticleIds.has(article.articleId) && article.embedding?.length)
-    .map((article) => article.embedding as number[]);
+  const articleById = new Map(articles.map((article) => [article.articleId, article]));
+  const weightedVectors: { vector: number[]; weight: number }[] = [];
+
+  for (const interaction of interactions) {
+    const weight = INTERACTION_WEIGHTS[interaction.action];
+    if (!weight) continue;
+    const article = articleById.get(interaction.articleId);
+    if (!article?.embedding?.length) continue;
+    weightedVectors.push({ vector: article.embedding, weight });
+  }
+
+  return weightedAverageVectors(weightedVectors);
+}
+
+function computeRecentClickCentroid(
+  interactions: Interaction[],
+  articles: Article[],
+  now: Date
+): number[] | undefined {
+  const articleById = new Map(articles.map((article) => [article.articleId, article]));
+  const cutoff = now.getTime() - RECENT_CLICK_WINDOW_MS;
+  const recentClicks = interactions
+    .filter(
+      (interaction) =>
+        interaction.action === "click" && Date.parse(interaction.timestamp) >= cutoff
+    )
+    .sort((a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp))
+    .slice(0, RECENT_CLICK_LIMIT);
+
+  const vectors = recentClicks
+    .map((interaction) => articleById.get(interaction.articleId)?.embedding)
+    .filter((embedding): embedding is number[] => Boolean(embedding?.length));
+
   return averageVectors(vectors);
 }
 
@@ -58,6 +93,7 @@ function popularityScore(article: Article, allInteractions: Interaction[], now: 
 function feedbackScore(
   article: Article,
   userInteractions: Interaction[],
+  articles: Article[],
   profile: UserProfile
 ): { score: number; filteredReason?: string } {
   if (profile.hiddenSources.includes(article.sourceId)) {
@@ -73,9 +109,11 @@ function feedbackScore(
   if (directActions.includes("save") || directActions.includes("like")) return { score: 1 };
 
   const positiveTopicSet = new Set<Topic>();
+  const articleById = new Map(articles.map((item) => [item.articleId, item]));
   for (const interaction of userInteractions) {
     if (interaction.action !== "like" && interaction.action !== "save") continue;
-    // Related article topic boosts are applied by caller through inferred topics.
+    const likedArticle = articleById.get(interaction.articleId);
+    likedArticle?.topics.forEach((topic) => positiveTopicSet.add(topic));
   }
   const overlap = article.topics.filter((topic) => positiveTopicSet.has(topic)).length;
   return { score: overlap ? 0.75 : 0.5 };
@@ -105,10 +143,14 @@ function buildExplanation(article: Article, profile: UserProfile, signals: Signa
     { key: "topicMatch", value: signals.topicMatch },
     { key: "countryMatch", value: signals.countryMatch },
     { key: "semanticSimilarity", value: signals.semanticSimilarity },
+    { key: "recentClickAffinity", value: signals.recentClickAffinity },
     { key: "recency", value: signals.recency }
   ].sort((a, b) => b.value - a.value);
   const top = reasons[0]?.key;
 
+  if (top === "recentClickAffinity" && signals.recentClickAffinity > 0.65) {
+    return "Recommended because it matches stories you recently opened.";
+  }
   if (top === "countryMatch" && signals.countryMatch > 0) {
     return `Recommended because it matches your ${countryLabel(article.sourceCountry)} news preference.`;
   }
@@ -123,6 +165,28 @@ function buildExplanation(article: Article, profile: UserProfile, signals: Signa
   return "Recommended because it is recent and broadens your source mix.";
 }
 
+function blendScore(signals: SignalBreakdown): number {
+  if (signals.filteredReason) return 0;
+  if (signals.coldStart) {
+    return (
+      0.45 * signals.topicMatch +
+      0.35 * signals.countryMatch +
+      0.15 * signals.recency +
+      0.05 * signals.sourceDiversity
+    );
+  }
+  return (
+    0.27 * signals.topicMatch +
+    0.18 * signals.semanticSimilarity +
+    0.1 * signals.recentClickAffinity +
+    0.14 * signals.countryMatch +
+    0.14 * signals.recency +
+    0.09 * signals.feedback +
+    0.05 * signals.sourceDiversity +
+    0.03 * signals.popularity
+  );
+}
+
 export function rankArticles(params: {
   articles: Article[];
   profile: UserProfile;
@@ -130,22 +194,31 @@ export function rankArticles(params: {
   allInteractions: Interaction[];
   now?: Date;
   limit?: number;
+  offset?: number;
 }): RankedArticle[] {
   const now = params.now ?? new Date();
-  const userInteractionCount = params.userInteractions.length;
+  const thirtyDaysAgo = now.getTime() - 30 * 24 * 60 * 60 * 1000;
+  const userInteractions = params.userInteractions
+    .filter((interaction) => Date.parse(interaction.timestamp) >= thirtyDaysAgo)
+    .slice(-500);
+  const userInteractionCount = userInteractions.length;
   const coldStart = userInteractionCount < 5;
-  const centroid = coldStart
+  const centroid = coldStart ? undefined : computeUserCentroid(userInteractions, params.articles);
+  const recentClickCentroid = coldStart
     ? undefined
-    : computeUserCentroid(params.userInteractions, params.articles);
-  const inferredTopics = inferTopics(params.userInteractions, params.articles);
+    : computeRecentClickCentroid(userInteractions, params.articles, now);
+  const inferredTopics = inferTopics(userInteractions, params.articles);
 
   const baseRanked = params.articles
     .filter((article) => !article.enrichedFailed)
     .map((article) => {
-      const feedback = feedbackScore(article, params.userInteractions, params.profile);
+      const feedback = feedbackScore(article, userInteractions, params.articles, params.profile);
       const signals: SignalBreakdown = {
         topicMatch: topicMatch(article, params.profile, inferredTopics),
         semanticSimilarity: coldStart ? 0 : cosineSimilarity(article.embedding, centroid),
+        recentClickAffinity: coldStart
+          ? 0
+          : cosineSimilarity(article.embedding, recentClickCentroid),
         countryMatch: countryMatch(article, params.profile),
         recency: recencyScore(article, now),
         feedback: feedback.score,
@@ -154,21 +227,7 @@ export function rankArticles(params: {
         coldStart,
         filteredReason: feedback.filteredReason
       };
-      const finalScore = feedback.filteredReason
-        ? 0
-        : coldStart
-          ? 0.45 * signals.topicMatch +
-            0.35 * signals.countryMatch +
-            0.15 * signals.recency +
-            0.05 * signals.sourceDiversity
-          : 0.3 * signals.topicMatch +
-            0.2 * signals.semanticSimilarity +
-            0.15 * signals.countryMatch +
-            0.15 * signals.recency +
-            0.1 * signals.feedback +
-            0.05 * signals.sourceDiversity +
-            0.05 * signals.popularity;
-      return { article, signals, finalScore };
+      return { article, signals, finalScore: blendScore(signals) };
     })
     .filter((item) => item.finalScore > 0)
     .sort((a, b) => b.finalScore - a.finalScore);
@@ -179,18 +238,7 @@ export function rankArticles(params: {
     const sourceDiversity = index < 5 && sourceCount > 0 ? 0.3 : 1;
     seenSources.set(item.article.sourceId, sourceCount + 1);
     const signals = { ...item.signals, sourceDiversity };
-    const finalScore = signals.coldStart
-      ? 0.45 * signals.topicMatch +
-        0.35 * signals.countryMatch +
-        0.15 * signals.recency +
-        0.05 * signals.sourceDiversity
-      : 0.3 * signals.topicMatch +
-        0.2 * signals.semanticSimilarity +
-        0.15 * signals.countryMatch +
-        0.15 * signals.recency +
-        0.1 * signals.feedback +
-        0.05 * signals.sourceDiversity +
-        0.05 * signals.popularity;
+    const finalScore = blendScore(signals);
     return {
       ...item.article,
       finalScore,
@@ -199,7 +247,61 @@ export function rankArticles(params: {
     };
   });
 
-  return diversified.sort((a, b) => b.finalScore - a.finalScore).slice(0, params.limit ?? 20);
+  const sorted = diversified.sort((a, b) => b.finalScore - a.finalScore);
+  const offset = params.offset ?? 0;
+  const limit = params.limit ?? 20;
+  return sorted.slice(offset, offset + limit);
+}
+
+export function rankRelatedArticles(params: {
+  source: Article;
+  candidates: Article[];
+  profile: UserProfile;
+  userInteractions: Interaction[];
+  limit?: number;
+}): RankedArticle[] {
+  const now = new Date();
+  const filtered = params.candidates.filter(
+    (article) =>
+      article.articleId !== params.source.articleId &&
+      article.enriched &&
+      !article.enrichedFailed
+  );
+
+  return filtered
+    .map((article) => {
+      const feedback = feedbackScore(
+        article,
+        params.userInteractions,
+        params.candidates,
+        params.profile
+      );
+      const similarity = cosineSimilarity(article.embedding, params.source.embedding);
+      const signals: SignalBreakdown = {
+        topicMatch: topicMatch(article, params.profile, params.source.topics),
+        semanticSimilarity: similarity,
+        recentClickAffinity: similarity,
+        countryMatch: countryMatch(article, params.profile),
+        recency: recencyScore(article, now),
+        feedback: feedback.score,
+        sourceDiversity: article.sourceId === params.source.sourceId ? 0.5 : 1,
+        popularity: 0,
+        coldStart: false,
+        filteredReason: feedback.filteredReason
+      };
+      const finalScore = feedback.filteredReason
+        ? 0
+        : 0.55 * similarity + 0.2 * signals.topicMatch + 0.15 * signals.recency + 0.1 * signals.sourceDiversity;
+      return {
+        ...article,
+        finalScore,
+        signalBreakdown: signals,
+        explanation: `Similar to "${params.source.title}" based on topic overlap and semantic match.`
+      };
+    })
+    .filter((item) => item.finalScore > 0)
+    .sort((a, b) => b.finalScore - a.finalScore)
+    .slice(0, params.limit ?? 6);
 }
 
 export function toRecommendationScore(userId: string, article: RankedArticle) {

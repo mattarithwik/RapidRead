@@ -2,11 +2,17 @@ export type Topic =
   | "AI"
   | "Climate"
   | "Business"
+  | "Finance"
   | "Health"
   | "Science"
   | "Politics"
   | "Technology"
-  | "Sports";
+  | "Cybersecurity"
+  | "Sports"
+  | "Entertainment"
+  | "Education"
+  | "Energy"
+  | "Environment";
 
 export type CountryCode =
   | "US"
@@ -17,6 +23,52 @@ export type CountryCode =
   | "DE"
   | "FR"
   | "JP"
+  | "CN"
+  | "HK"
+  | "TW"
+  | "KR"
+  | "SG"
+  | "MY"
+  | "TH"
+  | "ID"
+  | "PH"
+  | "VN"
+  | "PK"
+  | "BD"
+  | "BR"
+  | "MX"
+  | "AR"
+  | "CL"
+  | "CO"
+  | "PE"
+  | "IT"
+  | "ES"
+  | "PT"
+  | "NL"
+  | "BE"
+  | "CH"
+  | "AT"
+  | "SE"
+  | "NO"
+  | "DK"
+  | "FI"
+  | "PL"
+  | "CZ"
+  | "RO"
+  | "HU"
+  | "GR"
+  | "IE"
+  | "TR"
+  | "IL"
+  | "SA"
+  | "AE"
+  | "EG"
+  | "NG"
+  | "KE"
+  | "ZA"
+  | "RU"
+  | "UA"
+  | "NZ"
   | "GLOBAL";
 
 export type Sentiment = "positive" | "neutral" | "negative" | "mixed";
@@ -61,6 +113,7 @@ export interface UserProfile {
   hiddenSources: string[];
   onboardedAt?: string;
   lastActiveAt: string;
+  centroidVersion?: string;
 }
 
 export interface Interaction {
@@ -85,6 +138,7 @@ export interface RecommendationScore {
 export interface SignalBreakdown {
   topicMatch: number;
   semanticSimilarity: number;
+  recentClickAffinity: number;
   countryMatch: number;
   recency: number;
   feedback: number;

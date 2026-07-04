@@ -1,5 +1,6 @@
 import * as cdk from "aws-cdk-lib";
 import { Duration, RemovalPolicy } from "aws-cdk-lib";
+import * as budgets from "aws-cdk-lib/aws-budgets";
 import * as cognito from "aws-cdk-lib/aws-cognito";
 import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 import * as events from "aws-cdk-lib/aws-events";
@@ -13,6 +14,9 @@ import { Construct } from "constructs";
 export class NewsRecommenderStack extends cdk.Stack {
   public readonly newsTable: dynamodb.Table;
   public readonly rawArticlesBucket: s3.Bucket;
+  public readonly userPool: cognito.UserPool;
+  public readonly userPoolClient: cognito.UserPoolClient;
+  public readonly cognitoDomain: string;
 
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
@@ -39,12 +43,19 @@ export class NewsRecommenderStack extends cdk.Stack {
       projectionType: dynamodb.ProjectionType.ALL
     });
 
+    table.addGlobalSecondaryIndex({
+      indexName: "GSI2",
+      partitionKey: { name: "GSI2PK", type: dynamodb.AttributeType.STRING },
+      sortKey: { name: "GSI2SK", type: dynamodb.AttributeType.STRING },
+      projectionType: dynamodb.ProjectionType.ALL
+    });
+
     const enableSchedules = this.node.tryGetContext("enableSchedules") === "true";
     const sharedEnvironment = {
       STORAGE_BACKEND: "aws",
       NEWS_TABLE_NAME: table.tableName,
       RAW_ARTICLES_BUCKET: rawBucket.bucketName,
-      INGEST_MAX_ARTICLES: "200",
+      INGEST_MAX_ARTICLES: "400",
       ENRICHMENT_BATCH_SIZE: "50",
       ENABLE_BEDROCK: "true",
       BEDROCK_TEXT_MODEL_ID: "anthropic.claude-3-haiku-20240307-v1:0",
@@ -105,26 +116,63 @@ export class NewsRecommenderStack extends cdk.Stack {
     const userPool = new cognito.UserPool(this, "UserPool", {
       selfSignUpEnabled: true,
       signInAliases: { email: true },
-      removalPolicy: RemovalPolicy.DESTROY
+      removalPolicy: RemovalPolicy.DESTROY,
+      autoVerify: { email: true }
     });
 
-    const userPoolClient = new cognito.UserPoolClient(this, "UserPoolClient", {
-      userPool,
+    new cognito.CfnUserPoolGroup(this, "AdminGroup", {
+      userPoolId: userPool.userPoolId,
+      groupName: "admin",
+      description: "Administrators for RapidRead"
+    });
+
+    const domainPrefix = `rapidread-${cdk.Stack.of(this).account.replace(/[^a-z0-9-]/gi, "").toLowerCase()}`.slice(0, 63);
+    const userPoolDomain = userPool.addDomain("HostedUiDomain", {
+      cognitoDomain: { domainPrefix }
+    });
+
+    const userPoolClient = userPool.addClient("UserPoolClient", {
       authFlows: {
         userSrp: true,
         userPassword: true
       },
-      preventUserExistenceErrors: true
+      preventUserExistenceErrors: true,
+      oAuth: {
+        flows: { authorizationCodeGrant: true },
+        scopes: [cognito.OAuthScope.OPENID, cognito.OAuthScope.EMAIL, cognito.OAuthScope.PROFILE],
+        callbackUrls: [
+          "http://localhost:3000/api/auth/callback",
+          "https://localhost:3000/api/auth/callback"
+        ],
+        logoutUrls: ["http://localhost:3000/", "https://localhost:3000/"]
+      },
+      generateSecret: true
     });
 
     new cdk.CfnOutput(this, "NewsTableName", { value: table.tableName });
     new cdk.CfnOutput(this, "RawArticlesBucketName", { value: rawBucket.bucketName });
     new cdk.CfnOutput(this, "UserPoolId", { value: userPool.userPoolId });
     new cdk.CfnOutput(this, "UserPoolClientId", { value: userPoolClient.userPoolClientId });
+    new cdk.CfnOutput(this, "CognitoDomain", {
+      value: `${domainPrefix}.auth.${cdk.Stack.of(this).region}.amazoncognito.com`
+    });
     new cdk.CfnOutput(this, "IngestionFunctionName", { value: ingestionFunction.functionName });
     new cdk.CfnOutput(this, "EnrichmentFunctionName", { value: enrichmentFunction.functionName });
 
+    new budgets.CfnBudget(this, "MonthlyBudget", {
+      budget: {
+        budgetName: "rapidread-monthly",
+        budgetType: "COST",
+        timeUnit: "MONTHLY",
+        budgetLimit: { amount: 100, unit: "USD" }
+      }
+    });
+
     this.newsTable = table;
     this.rawArticlesBucket = rawBucket;
+    this.userPool = userPool;
+    this.userPoolClient = userPoolClient;
+    this.cognitoDomain = `${domainPrefix}.auth.${cdk.Stack.of(this).region}.amazoncognito.com`;
+    void userPoolDomain;
   }
 }

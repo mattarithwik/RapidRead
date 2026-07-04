@@ -1,5 +1,6 @@
 import * as cdk from "aws-cdk-lib";
 import { Duration } from "aws-cdk-lib";
+import * as cloudwatch from "aws-cdk-lib/aws-cloudwatch";
 import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as s3 from "aws-cdk-lib/aws-s3";
@@ -9,6 +10,9 @@ import { Construct } from "constructs";
 export interface RapidReadWebStackProps extends cdk.StackProps {
   readonly newsTable: dynamodb.ITable;
   readonly rawArticlesBucket: s3.IBucket;
+  readonly userPoolId: string;
+  readonly userPoolClientId: string;
+  readonly cognitoDomain: string;
 }
 
 /**
@@ -18,7 +22,7 @@ export class RapidReadWebStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: RapidReadWebStackProps) {
     super(scope, id, props);
 
-    const { newsTable, rawArticlesBucket } = props;
+    const { newsTable, rawArticlesBucket, userPoolId, userPoolClientId, cognitoDomain } = props;
 
     const site = new NextjsSite(this, "RapidReadSite", {
       openNextPath: ".open-next",
@@ -35,7 +39,10 @@ export class RapidReadWebStack extends cdk.Stack {
           ADMIN_INGEST_ENABLED: "false",
           ENABLE_BEDROCK: "false",
           BEDROCK_TEXT_MODEL_ID: "anthropic.claude-3-haiku-20240307-v1:0",
-          BEDROCK_EMBEDDING_MODEL_ID: "amazon.titan-embed-text-v2:0"
+          BEDROCK_EMBEDDING_MODEL_ID: "amazon.titan-embed-text-v2:0",
+          COGNITO_USER_POOL_ID: userPoolId,
+          COGNITO_USER_POOL_CLIENT_ID: userPoolClientId,
+          COGNITO_DOMAIN: cognitoDomain
         }
       }
     });
@@ -49,6 +56,13 @@ export class RapidReadWebStack extends cdk.Stack {
         resources: ["*"]
       })
     );
+
+    new cloudwatch.Alarm(this, "LambdaErrorAlarm", {
+      metric: site.defaultServerFunction.metricErrors(),
+      threshold: 5,
+      evaluationPeriods: 2,
+      alarmDescription: "RapidRead server Lambda error rate"
+    });
 
     new cdk.CfnOutput(this, "SiteUrl", {
       value: site.url,

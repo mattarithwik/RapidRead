@@ -1,24 +1,24 @@
+import { redirect } from "next/navigation";
 import { PreferenceForm } from "@/components/PreferenceForm";
-import { profileFallback } from "@/lib/seed";
-import { getProfile } from "@/lib/storage/store";
-import { getDemoUserId } from "@/lib/user";
+import { AccountDataPanel } from "@/components/settings/AccountDataPanel";
+import { PageHeader } from "@/components/layout/PageHeader";
+import { ensureUserProfile, getSession } from "@/lib/auth/session";
 
 export default async function SettingsPage() {
-  const userId = await getDemoUserId();
-  const profile = (await getProfile(userId)) ?? profileFallback(userId);
+  const session = await getSession();
+  if (!session) redirect("/sign-in");
+
+  const profile = await ensureUserProfile(session.user.userId);
 
   return (
-    <div className="page">
-      <section className="page-header">
-        <div>
-          <p className="eyebrow">Settings</p>
-          <h1>Tune your feed.</h1>
-          <p className="lede">
-            Change topic and country preferences without resetting your feedback history.
-          </p>
-        </div>
-      </section>
+    <div className="space-y-8">
+      <PageHeader
+        eyebrow="Settings"
+        title="Tune your feed."
+        description="Change topic and country preferences without resetting your feedback history."
+      />
       <PreferenceForm mode="settings" profile={profile} />
+      <AccountDataPanel />
     </div>
   );
 }

@@ -81,6 +81,33 @@ describe("rankArticles", () => {
     );
   });
 
+  it("boosts articles similar to recent clicks", () => {
+    const clicked = article({ articleId: "clicked", embedding: [1, 0, 0] });
+    const similar = article({ articleId: "similar", embedding: [0.95, 0.05, 0] });
+    const distant = article({ articleId: "distant", embedding: [0, 1, 0] });
+    const interactions: Interaction[] = Array.from({ length: 5 }).map((_, index) => ({
+      userId: "user",
+      articleId: "clicked",
+      action: index === 0 ? "like" : "click",
+      sessionId: "test",
+      timestamp: now.toISOString()
+    }));
+
+    const ranked = rankArticles({
+      articles: [distant, similar, clicked],
+      profile,
+      userInteractions: interactions,
+      allInteractions: interactions,
+      now
+    });
+
+    expect(
+      ranked.find((item) => item.articleId === "similar")?.signalBreakdown.recentClickAffinity
+    ).toBeGreaterThan(
+      ranked.find((item) => item.articleId === "distant")?.signalBreakdown.recentClickAffinity ?? 1
+    );
+  });
+
   it("filters disliked articles from the next ranking output", () => {
     const disliked = article({ articleId: "disliked" });
     const replacement = article({ articleId: "replacement", title: "Replacement" });

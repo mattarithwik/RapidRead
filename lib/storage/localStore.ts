@@ -8,7 +8,7 @@ import type {
   UserProfile
 } from "@/lib/types";
 import { seedSnapshot } from "@/lib/seed";
-import type { NewsStore } from "@/lib/storage/types";
+import type { ArticleQueryOptions, ArticleQueryResult, NewsStore } from "@/lib/storage/types";
 
 const dataDir = path.join(process.cwd(), ".data");
 const storePath = path.join(dataDir, "news-store.json");
@@ -37,9 +37,43 @@ export async function resetStore(snapshot: NewsStoreSnapshot = seedSnapshot): Pr
   await writeStore(snapshot);
 }
 
-export async function listArticles(): Promise<Article[]> {
+function filterArticles(articles: Article[], options: ArticleQueryOptions = {}): ArticleQueryResult {
+  const since = options.since ?? new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
+  const offset = options.cursor ? Number(Buffer.from(options.cursor, "base64url").toString("utf8")) : 0;
+  const limit = options.limit ?? 200;
+
+  let filtered = articles
+    .filter((article) => Date.parse(article.publishedAt) >= Date.parse(since))
+    .sort((a, b) => Date.parse(b.publishedAt) - Date.parse(a.publishedAt));
+
+  if (options.countries?.length) {
+    filtered = filtered.filter((article) => options.countries?.includes(article.sourceCountry));
+  }
+  if (options.topics?.length) {
+    filtered = filtered.filter((article) =>
+      article.topics.some((topic) => options.topics?.includes(topic))
+    );
+  }
+
+  const page = filtered.slice(offset, offset + limit);
+  const nextOffset = offset + limit;
+  return {
+    articles: page,
+    nextCursor:
+      nextOffset < filtered.length
+        ? Buffer.from(String(nextOffset)).toString("base64url")
+        : undefined
+  };
+}
+
+export async function queryRecentArticles(options?: ArticleQueryOptions): Promise<ArticleQueryResult> {
   const snapshot = await readStore();
-  return snapshot.articles;
+  return filterArticles(snapshot.articles, options);
+}
+
+export async function listArticles(): Promise<Article[]> {
+  const result = await queryRecentArticles({ limit: Number(process.env.INGEST_MAX_ARTICLES ?? 200) });
+  return result.articles;
 }
 
 export async function getArticle(articleId: string): Promise<Article | undefined> {
@@ -111,11 +145,34 @@ export async function upsertRecommendationScores(scores: RecommendationScore[]):
   await writeStore(snapshot);
 }
 
+export async function deleteUserData(userId: string): Promise<void> {
+  const snapshot = await readStore();
+  snapshot.profiles = snapshot.profiles.filter((profile) => profile.userId !== userId);
+  snapshot.interactions = snapshot.interactions.filter(
+    (interaction) => interaction.userId !== userId
+  );
+  snapshot.recommendationScores = snapshot.recommendationScores.filter(
+    (score) => score.userId !== userId
+  );
+  await writeStore(snapshot);
+}
+
+export async function exportUserData(userId: string): Promise<Record<string, unknown>> {
+  const snapshot = await readStore();
+  return {
+    profile: snapshot.profiles.find((profile) => profile.userId === userId),
+    interactions: snapshot.interactions.filter((interaction) => interaction.userId === userId),
+    recommendationScores: snapshot.recommendationScores.filter((score) => score.userId === userId),
+    exportedAt: new Date().toISOString()
+  };
+}
+
 export const localStore: NewsStore = {
   readStore,
   writeStore,
   resetStore,
   listArticles,
+  queryRecentArticles,
   getArticle,
   upsertArticles,
   updateArticle,
@@ -123,5 +180,7 @@ export const localStore: NewsStore = {
   upsertProfile,
   listInteractions,
   addInteraction,
-  upsertRecommendationScores
+  upsertRecommendationScores,
+  deleteUserData,
+  exportUserData
 };

@@ -26,3 +26,23 @@ export function averageVectors(vectors: number[][]): number[] | undefined {
     return sum / vectors.length;
   });
 }
+
+export function weightedAverageVectors(
+  entries: { vector: number[]; weight: number }[]
+): number[] | undefined {
+  if (!entries.length) return undefined;
+  const length = entries[0].vector.length;
+  let totalWeight = 0;
+  const sums = new Array<number>(length).fill(0);
+
+  for (const entry of entries) {
+    if (entry.vector.length !== length || entry.weight <= 0) continue;
+    totalWeight += entry.weight;
+    entry.vector.forEach((value, index) => {
+      sums[index] += value * entry.weight;
+    });
+  }
+
+  if (!totalWeight) return undefined;
+  return sums.map((value) => value / totalWeight);
+}

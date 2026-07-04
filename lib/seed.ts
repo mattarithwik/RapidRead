@@ -1,7 +1,7 @@
 import type { Article, NewsStoreSnapshot, UserProfile } from "@/lib/types";
 import { DEFAULT_USER_ID } from "@/lib/constants";
 
-const now = new Date("2026-05-04T12:00:00.000Z");
+const now = new Date();
 
 function hoursAgo(hours: number): string {
   return new Date(now.getTime() - hours * 60 * 60 * 1000).toISOString();

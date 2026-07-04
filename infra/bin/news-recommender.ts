@@ -15,5 +15,8 @@ const backend = new NewsRecommenderStack(app, "NewsRecommenderStack", { env });
 new RapidReadWebStack(app, "RapidReadWebStack", {
   env,
   newsTable: backend.newsTable,
-  rawArticlesBucket: backend.rawArticlesBucket
+  rawArticlesBucket: backend.rawArticlesBucket,
+  userPoolId: backend.userPool.userPoolId,
+  userPoolClientId: backend.userPoolClient.userPoolClientId,
+  cognitoDomain: backend.cognitoDomain
 });

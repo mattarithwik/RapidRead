@@ -1,75 +1,78 @@
+import { redirect } from "next/navigation";
+import { PageHeader } from "@/components/layout/PageHeader";
+import { Badge } from "@/components/ui/badge";
 import { countryLabel } from "@/lib/constants";
-import { profileFallback } from "@/lib/seed";
+import { ensureUserProfile, getSession } from "@/lib/auth/session";
 import { summarizeInferredInterests } from "@/lib/recommendation/ranking";
-import { getProfile, listArticles, listInteractions } from "@/lib/storage/store";
-import { getDemoUserId } from "@/lib/user";
+import { listArticles, listInteractions } from "@/lib/storage/store";
 
 export default async function ProfilePage() {
-  const userId = await getDemoUserId();
-  const profile = (await getProfile(userId)) ?? profileFallback(userId);
-  const [articles, interactions] = await Promise.all([listArticles(), listInteractions(userId)]);
+  const session = await getSession();
+  if (!session) redirect("/sign-in");
+
+  const profile = await ensureUserProfile(session.user.userId);
+  const [articles, interactions] = await Promise.all([
+    listArticles(),
+    listInteractions(session.user.userId)
+  ]);
   const inferredInterests = summarizeInferredInterests(interactions, articles);
 
   return (
-    <div className="page">
-      <section className="page-header">
-        <div>
-          <p className="eyebrow">Profile</p>
-          <h1>Your recommendation signals.</h1>
-          <p className="lede">
-            This dashboard shows the explicit preferences and feedback events that shape the feed.
-          </p>
-        </div>
-      </section>
-      <section className="profile-grid">
-        <div className="stat-panel">
-          <h2>Selected Topics</h2>
-          <div className="chips">
+    <div>
+      <PageHeader
+        eyebrow="Profile"
+        title="Your recommendation signals."
+        description="This dashboard shows the explicit preferences and feedback events that shape the feed."
+      />
+      <section className="grid gap-4 md:grid-cols-2">
+        <div className="rounded-xl border bg-card p-5 shadow-sm">
+          <h2 className="font-serif text-lg font-semibold">Selected topics</h2>
+          <div className="mt-3 flex flex-wrap gap-2">
             {profile.selectedTopics.map((topic) => (
-              <span className="chip" key={topic}>
-                {topic}
-              </span>
+              <Badge key={topic}>{topic}</Badge>
             ))}
           </div>
         </div>
-        <div className="stat-panel">
-          <h2>Selected Countries</h2>
-          <div className="chips">
+        <div className="rounded-xl border bg-card p-5 shadow-sm">
+          <h2 className="font-serif text-lg font-semibold">Selected countries</h2>
+          <div className="mt-3 flex flex-wrap gap-2">
             {profile.selectedCountries.map((country) => (
-              <span className="chip country" key={country}>
+              <Badge key={country} className="bg-accent text-accent-foreground">
                 {countryLabel(country)}
-              </span>
+              </Badge>
             ))}
           </div>
         </div>
-        <div className="stat-panel">
-          <h2>Inferred Interests</h2>
-          <div className="chips">
+        <div className="rounded-xl border bg-card p-5 shadow-sm">
+          <h2 className="font-serif text-lg font-semibold">Inferred interests</h2>
+          <div className="mt-3 flex flex-wrap gap-2">
             {inferredInterests.length ? (
               inferredInterests.map((item) => (
-                <span className="chip" key={item.topic}>
+                <Badge key={item.topic} variant="outline">
                   {item.topic} · {item.count}
-                </span>
+                </Badge>
               ))
             ) : (
-              <p className="meta">Like or save articles to build an interest centroid.</p>
+              <p className="text-sm text-muted-foreground">Like or save articles to build an interest centroid.</p>
             )}
           </div>
         </div>
-        <div className="stat-panel">
-          <h2>Recent Feedback</h2>
-          {interactions.length ? (
-            interactions
-              .slice(-6)
-              .reverse()
-              .map((interaction) => (
-                <p className="meta" key={`${interaction.timestamp}-${interaction.articleId}`}>
-                  {interaction.action} · {new Date(interaction.timestamp).toLocaleString()}
-                </p>
-              ))
-          ) : (
-            <p className="meta">No feedback yet.</p>
-          )}
+        <div className="rounded-xl border bg-card p-5 shadow-sm">
+          <h2 className="font-serif text-lg font-semibold">Recent feedback</h2>
+          <div className="mt-3 space-y-2">
+            {interactions.length ? (
+              interactions
+                .slice(-6)
+                .reverse()
+                .map((interaction) => (
+                  <p className="text-sm text-muted-foreground" key={`${interaction.timestamp}-${interaction.articleId}`}>
+                    {interaction.action} · {new Date(interaction.timestamp).toLocaleString()}
+                  </p>
+                ))
+            ) : (
+              <p className="text-sm text-muted-foreground">No feedback yet.</p>
+            )}
+          </div>
         </div>
       </section>
     </div>
